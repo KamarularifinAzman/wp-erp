@@ -673,6 +673,7 @@ function erp_hr_apply_scheduled_policies() {
     } );
 }
 
+
 /**
  * Insert a leave holiday
  *
@@ -747,8 +748,8 @@ function erp_hr_leave_insert_holiday( $args = [] ) {
         // Insert new locations
         if ( ! empty( $locations ) ) {
             foreach ( $locations as $location_id ) {
-                // MODIFIED: Changed condition from > 0 to is_numeric to include location ID 1
-                if ( is_numeric( $location_id ) && $location_id > 0 ) {
+                // MODIFIED: Changed condition to correctly handle location ID 1 ("Main Location")
+                if ( intval( $location_id ) > 0 ) {
                     $wpdb->insert(
                         $holiday_location_table,
                         [
@@ -764,7 +765,6 @@ function erp_hr_leave_insert_holiday( $args = [] ) {
 
     return $holiday_id;
 }
-
 
 /**
  * Get all leave policies with different condition
