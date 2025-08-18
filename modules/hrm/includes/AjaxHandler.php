@@ -269,6 +269,7 @@ class AjaxHandler {
 	 * Get Holiday
 	 *
 	 * @since 0.1
+     * @since 1.11.0 (Modified for location)
 	 *
 	 * @return json
 	 */
@@ -277,14 +278,14 @@ class AjaxHandler {
 
 		$holiday_id = isset( $_POST['id'] ) ? intval( $_POST['id'] ) : 0;
 
-		$holiday = erp_hr_get_holidays(
+		$holiday_results = erp_hr_get_holidays(
 			array(
 				'id'     => $holiday_id,
 				'number' => - 1,
 			)
 		);
 
-		$holiday          = (array) reset( $holiday );
+		$holiday          = (array) reset( $holiday_results );
 		$holiday['end']   = gmdate( 'Y-m-d', strtotime( $holiday['end'] ) );
 		$holiday['start'] = gmdate( 'Y-m-d', strtotime( $holiday['start'] ) );
 
@@ -1822,6 +1823,7 @@ class AjaxHandler {
 	 * Create or update a holiday
 	 *
 	 * @since 0.1
+     * @since 1.11.0 (Modified for location)
 	 *
 	 * @return void
 	 */
@@ -1840,6 +1842,7 @@ class AjaxHandler {
 		$end_date     = gmdate( 'Y-m-d 23:59:59', strtotime( $end_date ) );
 		$description  = isset( $_POST['description'] ) ? sanitize_text_field( wp_unslash( $_POST['description'] ) ) : '';
 		$range_status = isset( $_POST['range'] ) ? sanitize_text_field( wp_unslash( $_POST['range'] ) ) : 'off';
+        $locations    = isset( $_POST['locations'] ) ? array_map( 'intval', (array) $_POST['locations'] ) : [];
 		$error        = true;
 
 		if ( $range_status === 'off' ) {
@@ -1857,6 +1860,7 @@ class AjaxHandler {
 				'start'       => $start_date,
 				'end'         => $end_date,
 				'description' => $description,
+                'locations'   => $locations
 			)
 		);
 

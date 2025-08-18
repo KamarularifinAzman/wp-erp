@@ -64,7 +64,8 @@ function erp_hr_get_work_days_without_off_day( $start_date, $end_date, $user_id 
 		'total' => 0,
 	];
     $work_days     = erp_hr_get_work_days();
-    $holiday_exist = erp_hr_leave_get_holiday_between_date_range( $start_date, $end_date );
+    // MODIFIED: Pass user_id to get location-specific holidays
+    $holiday_exist = erp_hr_leave_get_holiday_between_date_range( $start_date, $end_date, $user_id );
 
     foreach ( $between_dates as $date ) {
         $key       = strtolower( gmdate( 'D', strtotime( $date ) ) );
@@ -128,7 +129,8 @@ function erp_hr_get_work_days_between_dates( $start_date, $end_date, $user_id = 
 		'sandwich' => 0,
 	];
     $work_days     = erp_hr_get_work_days();
-    $holiday_exist = erp_hr_leave_get_holiday_between_date_range( $start_date, $end_date );
+    // MODIFIED: Pass user_id to get location-specific holidays
+    $holiday_exist = erp_hr_leave_get_holiday_between_date_range( $start_date, $end_date, $user_id );
 
     $sandwich_rules_applied = erp_hr_can_apply_sandwich_rules_between_dates( $start_date, $end_date, $user_id );
 
@@ -207,7 +209,7 @@ function erp_hr_can_apply_sandwich_rules_between_dates( $start_date, $end_date, 
                 $previous_between_dates = erp_extract_dates( $last_req_end_date, $start_day_previous );
 
                 //check holiday or non-working day exist between last_req and current start_date
-                $previous_holiday_exist = erp_hr_leave_get_holiday_between_date_range( $last_req_end_date, $start_day_previous );
+                $previous_holiday_exist = erp_hr_leave_get_holiday_between_date_range( $last_req_end_date, $start_day_previous, $user_id );
 
                 foreach ( $previous_between_dates as $date ) {
                     $key       = strtolower( gmdate( 'D', strtotime( $date ) ) );
@@ -247,7 +249,7 @@ function erp_hr_can_apply_sandwich_rules_between_dates( $start_date, $end_date, 
                 $previous_between_dates = erp_extract_dates( $end_date_next_day, $last_req_start_date );
 
                 //check holiday or non-working day exist between last_req and current start_date
-                $previous_holiday_exist = erp_hr_leave_get_holiday_between_date_range( $end_date_next_day, $last_req_start_date );
+                $previous_holiday_exist = erp_hr_leave_get_holiday_between_date_range( $end_date_next_day, $last_req_start_date, $user_id );
 
                 foreach ( $previous_between_dates as $date ) {
                     $key       = strtolower( gmdate( 'D', strtotime( $date ) ) );

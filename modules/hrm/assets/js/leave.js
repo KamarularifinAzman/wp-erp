@@ -24,10 +24,11 @@
             $( '.entitlement-list-table' ).on( 'click', 'a.submitdelete', self, this.entitlement.remove );
 
             //Holiday
-            $( '.erp-hr-holiday-wrap' ).on( 'click', 'a#erp-hr-new-holiday', self, this.holiday.create );
-            $( '.erp-hr-holiday-wrap' ).on( 'click', '.erp-hr-holiday-edit', self, this.holiday.edit );
-            $( '.erp-hr-holiday-wrap' ).on( 'click', '.erp-hr-holiday-delete', self, this.holiday.remove );
-            $( '.erp-hr-holiday-wrap' ).on( 'click', 'a#erp-hr-import-holiday', self, this.holiday.import );
+            // MODIFIED: Changed event delegation to 'body' for better reliability
+            $( 'body' ).on( 'click', 'a#erp-hr-new-holiday', self, this.holiday.create );
+            $( 'body' ).on( 'click', '.erp-hr-holiday-edit', self, this.holiday.edit );
+            $( 'body' ).on( 'click', '.erp-hr-holiday-delete', self, this.holiday.remove );
+            $( 'body' ).on( 'click', 'a#erp-hr-import-holiday', self, this.holiday.import );
             $( 'body' ).on( 'change', '.erp-hr-holiday-date-range', self, this.holiday.checkRange );
 
             $( 'body' ).on( 'dblclick', '#erp-hr-holiday-data input', function() {
@@ -256,6 +257,7 @@
                     extraClass: 'smaller',
                     onReady: function() {
                         Leave.initDateField();
+                        $('.erp-select2').select2();
                         Leave.holiday.checkRange();
                         Leave.initToggleCheckbox();
                     },
@@ -275,9 +277,12 @@
                     content: wperp.template('erp-hr-holiday-js-tmp')({ data: null }).trim(),
                     extraClass: 'smaller',
                     onReady: function() {
-                        Leave.initDateField();
-                        Leave.holiday.checkRange();
                         var modal = this;
+                        // Initialize date pickers and select2
+                        Leave.initDateField();
+                        $('.erp-select2', modal).select2();
+                        Leave.holiday.checkRange();
+
                         $( 'header', modal).after( $('<div class="loader"></div>').show() );
 
                         wp.ajax.send( 'erp-hr-get-holiday', {
@@ -295,6 +300,11 @@
                                 $( '#erp-hr-holiday-id', modal ).val( holiday.id );
                                 $( '#erp-hr-holiday-description', modal ).val( holiday.description );
                                 $( '#erp-hr-holiday-action', modal ).val( 'erp_hr_holiday_create' );
+
+                                // Set selected locations
+                                if ( holiday.locations && holiday.locations.length > 0 ) {
+                                    $( '#erp-hr-holiday-locations', modal ).val( holiday.locations ).trigger('change');
+                                }
 
                                 var date1 = new Date( holiday.start );
                                 var date2 = new Date( holiday.end );

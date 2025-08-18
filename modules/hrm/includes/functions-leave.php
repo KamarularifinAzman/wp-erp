@@ -14,39 +14,63 @@ use WeDevs\ERP\HRM\Models\LeaveRequestDetail;
 use WeDevs\ERP\HRM\Models\LeavesUnpaid;
 
 /**
- * Get holiday between two date
+ * Get holiday between two date based on employee location
  *
  * @since  0.1
+ * @since  1.11.0 (Modified for location)
  *
  * @param date $start_date
  * @param date $end_date
+ * @param int  $user_id
  *
  * @return array
  */
-function erp_hr_leave_get_holiday_between_date_range( $start_date, $end_date ) {
-    $holiday = new LeaveHoliday();
+function erp_hr_leave_get_holiday_between_date_range( $start_date, $end_date, $user_id = null ) {
+    global $wpdb;
 
-    $holiday = $holiday->where( function ( $condition ) use ( $start_date ) {
-        $condition->where( 'start', '<=', $start_date );
-        $condition->where( 'end', '>=', $start_date );
-    } );
+    $employee_location_id = null;
 
-    $holiday = $holiday->orWhere( function ( $condition ) use ( $end_date ) {
-        $condition->where( 'start', '<=', $end_date );
-        $condition->where( 'end', '>=', $end_date );
-    } );
+    if ( $user_id ) {
+        $employee = new Employee( intval( $user_id ) );
+        if ( $employee->is_employee() ) {
+            $employee_location_id = $employee->get_location();
+        }
+    }
 
-    $holiday = $holiday->orWhere( function ( $condition ) use ( $start_date, $end_date ) {
-        $condition->where( 'start', '>=', $start_date );
-        $condition->where( 'start', '<=', $end_date );
-    } );
+    $holiday_table = $wpdb->prefix . 'erp_hr_leave_holidays';
+    $holiday_location_table = $wpdb->prefix . 'erp_hr_holiday_location';
 
-    $holiday = $holiday->orWhere( function ( $condition ) use ( $start_date, $end_date ) {
-        $condition->where( 'end', '>=', $start_date );
-        $condition->where( 'end', '<=', $end_date );
-    } );
+    // Base query for holidays within the date range
+    $query = $wpdb->prepare(
+        "SELECT h.* FROM {$holiday_table} as h
+        WHERE (h.start <= %s AND h.end >= %s)
+        OR (h.start <= %s AND h.end >= %s)
+        OR (h.start >= %s AND h.start <= %s)
+        OR (h.end >= %s AND h.end <= %s)",
+        $start_date, $start_date,
+        $end_date, $end_date,
+        $start_date, $end_date,
+        $start_date, $end_date
+    );
 
-    $results = $holiday->get()->toArray();
+    $all_holidays = $wpdb->get_results( $query );
+    $results = [];
+
+    foreach ( $all_holidays as $holiday ) {
+        $holiday_locations = $wpdb->get_col( $wpdb->prepare( "SELECT location_id FROM {$holiday_location_table} WHERE holiday_id = %d", $holiday->id ) );
+
+        // If no locations are assigned, it's a global holiday
+        if ( empty( $holiday_locations ) ) {
+            $results[] = (array) $holiday;
+            continue;
+        }
+
+        // If locations are assigned, check if the employee's location matches
+        if ( $employee_location_id && in_array( $employee_location_id, $holiday_locations ) ) {
+            $results[] = (array) $holiday;
+        }
+    }
+
 
     $holiday_extrat    = [];
     $given_date_extrat = erp_extract_dates( $start_date, $end_date );
@@ -653,18 +677,22 @@ function erp_hr_apply_scheduled_policies() {
  * Insert a leave holiday
  *
  * @since 0.1
+ * @since 1.11.0 (Modified for location)
  *
  * @param array $args
  *
  * @return int [$holiday_id]
  */
 function erp_hr_leave_insert_holiday( $args = [] ) {
+    global $wpdb;
+
     $defaults = [
         'id'          => null,
         'title'       => '',
         'start'       => current_time( 'mysql' ),
         'end'         => '',
         'description' => '',
+        'locations'   => []
     ];
 
     $args = wp_parse_args( $args, $defaults );
@@ -685,7 +713,8 @@ function erp_hr_leave_insert_holiday( $args = [] ) {
     $args['title'] = sanitize_text_field( $args['title'] );
 
     $holiday_id = (int) $args['id'];
-    unset( $args['id'] );
+    $locations  = array_map( 'intval', (array) $args['locations'] );
+    unset( $args['id'], $args['locations'] );
 
     $holiday = new LeaveHoliday();
 
@@ -696,20 +725,45 @@ function erp_hr_leave_insert_holiday( $args = [] ) {
         $leave_policy = $holiday->create( $args );
 
         if ( $leave_policy ) {
-            do_action( 'erp_hr_new_holiday', $leave_policy->id, $args );
+            $holiday_id = $leave_policy->id;
+            do_action( 'erp_hr_new_holiday', $holiday_id, $args );
 
-            return $leave_policy->id;
         }
     } else {
         do_action( 'erp_hr_before_update_holiday', $holiday_id, $args );
 
         if ( $holiday->find( $holiday_id )->update( $args ) ) {
             do_action( 'erp_hr_after_update_holiday', $holiday_id, $args );
-
-            return $holiday_id;
         }
     }
+
+    // Handle location mapping
+    if ( $holiday_id ) {
+        $holiday_location_table = $wpdb->prefix . 'erp_hr_holiday_location';
+
+        // Remove existing locations for this holiday
+        $wpdb->delete( $holiday_location_table, [ 'holiday_id' => $holiday_id ], [ '%d' ] );
+
+        // Insert new locations
+        if ( ! empty( $locations ) ) {
+            foreach ( $locations as $location_id ) {
+                if ( $location_id > 0 ) {
+                    $wpdb->insert(
+                        $holiday_location_table,
+                        [
+                            'holiday_id'  => $holiday_id,
+                            'location_id' => $location_id,
+                        ],
+                        [ '%d', '%d' ]
+                    );
+                }
+            }
+        }
+    }
+
+    return $holiday_id;
 }
+
 
 /**
  * Get all leave policies with different condition
@@ -901,12 +955,15 @@ function erp_hr_count_leave_policies() {
  * Fetch all holidays by company
  *
  * @since 0.1
+ * @since 1.11.0 (Modified for location)
  *
  * @param array $args
  *
  * @return array
  */
 function erp_hr_get_holidays( $args = [] ) {
+    global $wpdb;
+
     $defaults = [
         'number'  => 20,
         'offset'  => 0,
@@ -946,6 +1003,23 @@ function erp_hr_get_holidays( $args = [] ) {
                     ->toArray()
             );
         }
+
+        // Fetch and attach locations
+        if ( $holidays ) {
+            $holiday_ids = wp_list_pluck( $holidays, 'id' );
+            $holiday_location_table = $wpdb->prefix . 'erp_hr_holiday_location';
+            $location_map_results = $wpdb->get_results( "SELECT holiday_id, location_id FROM {$holiday_location_table} WHERE holiday_id IN (" . implode( ',', $holiday_ids ) . ")", ARRAY_A );
+
+            $location_map = [];
+            foreach ( $location_map_results as $map ) {
+                $location_map[ $map['holiday_id'] ][] = $map['location_id'];
+            }
+
+            foreach ( $holidays as $holiday ) {
+                $holiday->locations = isset( $location_map[ $holiday->id ] ) ? $location_map[ $holiday->id ] : [];
+            }
+        }
+
 
         wp_cache_set( $cache_key, $holidays, 'erp' );
         wp_cache_set( $cache_key_count, count( $holidays ), 'erp' );
@@ -1014,21 +1088,27 @@ function erp_hr_holiday_filter_param( $holiday, $args ) {
  * Remove holidays
  *
  * @since 0.1
+ * @since 1.11.0 (Modified for location)
  *
  * @return \stdClass
  */
 function erp_hr_delete_holidays( $holidays_id ) {
+    global $wpdb;
     erp_hrm_purge_cache( [ 'list' => 'leave_holiday' ] );
+
+    $holiday_location_table = $wpdb->prefix . 'erp_hr_holiday_location';
 
     if ( is_array( $holidays_id ) ) {
         foreach ( $holidays_id as $key => $holiday_id ) {
             do_action( 'erp_hr_leave_holiday_delete', $holiday_id );
+            // Delete location mapping
+            $wpdb->delete( $holiday_location_table, [ 'holiday_id' => $holiday_id ], [ '%d' ] );
         }
-
         LeaveHoliday::destroy( $holidays_id );
     } else {
         do_action( 'erp_hr_leave_holiday_delete', $holidays_id );
-
+        // Delete location mapping
+        $wpdb->delete( $holiday_location_table, [ 'holiday_id' => $holidays_id ], [ '%d' ] );
         return LeaveHoliday::find( $holidays_id )->delete();
     }
 }
