@@ -716,7 +716,7 @@ function erp_hr_leave_insert_holiday( $args = [] ) {
     $locations  = array_map( 'intval', (array) $args['locations'] );
     unset( $args['id'], $args['locations'] );
 
-    $holiday = new LeaveHoliday();
+    $holiday = new WeDevs\ERP\HRM\Models\LeaveHoliday();
 
     erp_hrm_purge_cache( [ 'list' => 'leave_holiday' ] );
 
@@ -747,7 +747,8 @@ function erp_hr_leave_insert_holiday( $args = [] ) {
         // Insert new locations
         if ( ! empty( $locations ) ) {
             foreach ( $locations as $location_id ) {
-                if ( $location_id > 0 ) {
+                // MODIFIED: Changed condition from > 0 to is_numeric to include location ID 1
+                if ( is_numeric( $location_id ) && $location_id > 0 ) {
                     $wpdb->insert(
                         $holiday_location_table,
                         [

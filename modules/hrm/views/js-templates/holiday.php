@@ -48,9 +48,9 @@
         $raw_locations = erp_company_get_locations();
         $locations = [];
 
+        // This block ensures that the locations are always in the correct format [id => 'name']
         if ( is_array( $raw_locations ) ) {
             foreach( $raw_locations as $key => $value ) {
-                // The value might be an object, so we check and extract the name property
                 if ( is_object( $value ) && isset( $value->name ) ) {
                     $locations[ $key ] = $value->name;
                 } else {
