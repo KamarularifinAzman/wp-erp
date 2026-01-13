@@ -6,6 +6,9 @@
 add_action( 'admin_init', 'erp_process_actions' );
 add_action( 'admin_init', 'erp_process_csv_export' );
 add_action( 'admin_init', 'erp_import_export_download_sample' );
+add_action('erp_hr_employee_new', 'erp_hr_ensure_work_location', 10, 1);
+add_action('erp_update_people', 'erp_hr_ensure_work_location', 10, 1);
+add_action('admin_notices', 'erp_hr_work_location_admin_notice');
 
 /* Filters *******************************************************************/
 
@@ -13,6 +16,9 @@ add_filter( 'map_meta_cap', 'erp_map_meta_caps', 10, 4 );
 add_filter( 'cron_schedules', 'erp_cron_intervals', 10, 1 );
 add_filter( 'ajax_query_attachments_args', 'erp_show_users_own_attachments', 1, 1 );
 
+// Add these lines to actions-filters.php
+add_filter('erp_hr_leave_request_duration', 'erp_hr_filter_leave_duration_with_holidays', 10, 3);
+   
 //login redirect hook
 add_filter( 'login_redirect', 'erp_login_redirect_manager', 10, 3 );
 
