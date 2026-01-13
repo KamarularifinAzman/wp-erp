@@ -59,6 +59,7 @@ use WeDevs\ERP\Framework\Modules;
 use WeDevs\ERP\Admin\UserProfile;
 use WeDevs\ERP\WeDevsERPInstaller;
 
+require_once WPERP_INCLUDES . '/functions-holiday.php';
 require_once __DIR__ . '/vendor/autoload.php';
 define( 'WPERP_VERSION', '1.16.9' );
 define( 'WPERP_FILE', __FILE__ );
@@ -443,7 +444,11 @@ add_action('init', function(){
 }, 1);
 
 register_activation_hook( __FILE__, function() {
-
     $installer = new WeDevsERPInstaller();
     $installer->activate();
+	
+	 // Run HR holiday location updater if HR module is present
+    if ( function_exists( 'erp_hr_run_holiday_location_updates' ) ) {
+        erp_hr_run_holiday_location_updates();
+    }
 } );
