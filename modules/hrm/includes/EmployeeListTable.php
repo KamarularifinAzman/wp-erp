@@ -184,7 +184,7 @@ class EmployeeListTable extends \WP_List_Table {
             'designation'  => __( 'Designation', 'erp' ),
             'department'   => __( 'Department', 'erp' ),
             'type'         => __( 'Employment Type', 'erp' ),
-            //'date_of_hire' => __( 'Hire Date', 'erp' )
+            'date_of_hire' => __( 'Hire Date', 'erp' )
         ];
 
         $status = ! empty( $_REQUEST['status'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['status'] ) ) : '';

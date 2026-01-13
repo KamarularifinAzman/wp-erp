@@ -5,8 +5,6 @@
 class Leave_Holiday_List_Table extends WP_List_Table {
 
     protected $page_status;
-    private $locations;
-
     public function __construct() {
         global $status, $page;
 
@@ -15,8 +13,6 @@ class Leave_Holiday_List_Table extends WP_List_Table {
             'plural'   => 'holiday',
             'ajax'     => false,
         ] );
-
-        $this->locations = erp_company_get_locations();
     }
 
     /**
@@ -77,21 +73,7 @@ class Leave_Holiday_List_Table extends WP_List_Table {
 
                 $days = erp_date_duration( $holiday->start, $holiday->end );
 
-                return $days . ' ' . _n( __( 'day', 'erp' ), __( 'days', 'erp' ), $days );
-
-            case 'location':
-                if ( empty( $holiday->locations ) ) {
-                    return __( 'All', 'erp' );
-                }
-
-                $location_names = [];
-                foreach ( $holiday->locations as $loc_id ) {
-                    if ( isset( $this->locations[ $loc_id ] ) ) {
-                        $location_names[] = $this->locations[ $loc_id ];
-                    }
-                }
-                return implode( ', ', $location_names );
-
+                return $days . ' ' . _n( 'day', 'days', $days, 'erp' );
 
             case 'description':
                 return ! empty( $holiday->description ) ? $holiday->description : '--';
@@ -112,7 +94,6 @@ class Leave_Holiday_List_Table extends WP_List_Table {
             'start'       => __( 'Start Date', 'erp' ),
             'end'         => __( 'End Date', 'erp' ),
             'duration'    => __( 'Duration', 'erp' ),
-            'location'    => __( 'Location', 'erp' ),
             'description' => __( 'Description', 'erp' ),
         ];
 
@@ -305,12 +286,6 @@ class Leave_Holiday_List_Table extends WP_List_Table {
 </div>
 
 <style>
-    #wpbody-content {
-        overflow: visible !important;
-    }
-    .erp-nav-container .erp-nav.erp-nav-dropdown {
-        z-index: 9999;
-    }
     .erp-help-tip {
         width: 15px;
         bottom: 0.2rem;

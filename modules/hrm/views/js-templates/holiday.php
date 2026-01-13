@@ -44,35 +44,6 @@
     </div>
 
     <div class="row">
-        <?php
-        $raw_locations = erp_company_get_locations();
-        $locations = [];
-
-        // This block ensures that the locations are always in the correct format [id => 'name']
-        if ( is_array( $raw_locations ) ) {
-            foreach( $raw_locations as $key => $value ) {
-                if ( is_object( $value ) && isset( $value->name ) ) {
-                    $locations[ $key ] = $value->name;
-                } else {
-                    $locations[ $key ] = $value;
-                }
-            }
-        }
-
-        erp_html_form_input( [
-            'label'       => __( 'Location(s)', 'erp' ),
-            'name'        => 'locations[]',
-            'id'          => 'erp-hr-holiday-locations',
-            'type'        => 'select',
-            'class'       => 'erp-select2',
-            'options'     => $locations,
-            'placeholder' => __( 'All Locations', 'erp' ),
-            'custom_attr' => [ 'multiple' => 'multiple' ]
-        ] );
-        ?>
-    </div>
-
-    <div class="row">
         <?php erp_html_form_input( [
             'type'     => 'textarea',
             'label'    => __( 'Description', 'erp' ),

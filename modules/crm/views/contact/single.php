@@ -2,6 +2,7 @@
 if (
     ! current_user_can( erp_crm_get_manager_role() ) &&
     ! current_user_can( 'manage_options' ) &&
+    ! apply_filters( 'erp_crm_user_can_access_single_contact_view', false ) &&
     intval( $customer->contact_owner ) !== get_current_user_id()
 ) {
     wp_die( esc_html__( 'Unauthorized request.', 'erp' ), 401 );
@@ -17,7 +18,7 @@ $life_stages      = erp_crm_get_life_stages_dropdown_raw();
     <h2>
         <?php
         esc_html_e( 'Contact #', 'erp' );
-        echo esc_html_e( $customer->id, 'erp' );
+        esc_html_e( $customer->id, 'erp' );
         ?>
         <a href="<?php echo esc_url_raw( $contact_list_url ); ?>" id="erp-contact-list" class="add-new-h2"><?php esc_html_e( 'Back to Contact list', 'erp' ); ?></a>
 

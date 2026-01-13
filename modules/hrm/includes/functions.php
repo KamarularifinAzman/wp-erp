@@ -64,8 +64,7 @@ function erp_hr_get_work_days_without_off_day( $start_date, $end_date, $user_id 
 		'total' => 0,
 	];
     $work_days     = erp_hr_get_work_days();
-    // MODIFIED: Pass user_id to get location-specific holidays
-    $holiday_exist = erp_hr_leave_get_holiday_between_date_range( $start_date, $end_date, $user_id );
+    $holiday_exist = erp_hr_leave_get_holiday_between_date_range( $start_date, $end_date );
 
     foreach ( $between_dates as $date ) {
         $key       = strtolower( gmdate( 'D', strtotime( $date ) ) );
@@ -129,8 +128,7 @@ function erp_hr_get_work_days_between_dates( $start_date, $end_date, $user_id = 
 		'sandwich' => 0,
 	];
     $work_days     = erp_hr_get_work_days();
-    // MODIFIED: Pass user_id to get location-specific holidays
-    $holiday_exist = erp_hr_leave_get_holiday_between_date_range( $start_date, $end_date, $user_id );
+    $holiday_exist = erp_hr_leave_get_holiday_between_date_range( $start_date, $end_date );
 
     $sandwich_rules_applied = erp_hr_can_apply_sandwich_rules_between_dates( $start_date, $end_date, $user_id );
 
@@ -209,7 +207,7 @@ function erp_hr_can_apply_sandwich_rules_between_dates( $start_date, $end_date, 
                 $previous_between_dates = erp_extract_dates( $last_req_end_date, $start_day_previous );
 
                 //check holiday or non-working day exist between last_req and current start_date
-                $previous_holiday_exist = erp_hr_leave_get_holiday_between_date_range( $last_req_end_date, $start_day_previous, $user_id );
+                $previous_holiday_exist = erp_hr_leave_get_holiday_between_date_range( $last_req_end_date, $start_day_previous );
 
                 foreach ( $previous_between_dates as $date ) {
                     $key       = strtolower( gmdate( 'D', strtotime( $date ) ) );
@@ -249,7 +247,7 @@ function erp_hr_can_apply_sandwich_rules_between_dates( $start_date, $end_date, 
                 $previous_between_dates = erp_extract_dates( $end_date_next_day, $last_req_start_date );
 
                 //check holiday or non-working day exist between last_req and current start_date
-                $previous_holiday_exist = erp_hr_leave_get_holiday_between_date_range( $end_date_next_day, $last_req_start_date, $user_id );
+                $previous_holiday_exist = erp_hr_leave_get_holiday_between_date_range( $end_date_next_day, $last_req_start_date );
 
                 foreach ( $previous_between_dates as $date ) {
                     $key       = strtolower( gmdate( 'D', strtotime( $date ) ) );
@@ -676,14 +674,22 @@ function erp_hr_get_employee_pending_requests_count() {
  *
  * @since 1.8.6
  *
- * @return array $f_years
+ * @return array $rows
  */
 function erp_get_hr_financial_years() {
     global $wpdb;
 
-    $f_years = $wpdb->get_results( "SELECT * FROM {$wpdb->prefix}erp_hr_financial_years", ARRAY_A );
+    $rows = $wpdb->get_results(
+        "SELECT * FROM {$wpdb->prefix}erp_hr_financial_years",
+        ARRAY_A
+    );
 
-    return $f_years;
+    foreach ( $rows as &$row ) {
+        $row['start_date'] = wp_date( 'Y-m-d', (int) $row['start_date'] );
+        $row['end_date']   = wp_date( 'Y-m-d', (int) $row['end_date'] );
+    }
+
+    return $rows;
 }
 
 /**
@@ -696,48 +702,62 @@ function erp_get_hr_financial_years() {
  * @return object|boolean WP_Error or true
  */
 function erp_settings_save_leave_years( $post_data = [] ) {
+    global $wpdb;
+
     $year_names = [];
 
-    // Error handles
     foreach ( $post_data as $key => $data ) {
+
         if ( empty( $data['fy_name'] ) ) {
             return new WP_Error( 'errors', __( 'Please give a financial year name on row #', 'erp' ) . ( $key + 1 ) );
         }
-        if ( empty( $data['start_date'] ) ) {
-            return new WP_Error( 'errors', __( 'Please give a financial year start date on row #', 'erp' ) . ( $key + 1 ) );
-        }
-        if ( empty( $data['end_date'] ) ) {
-            return new WP_Error( 'errors', __( 'Please give a financial year end date on row #', 'erp' ) . ( $key + 1 ) );
-        }
-        if ( ( strtotime( $data['end_date'] ) < strtotime( $data['start_date'] ) ) || strtotime( $data['end_date'] ) === strtotime( $data['start_date'] ) ) {
-            return new WP_Error( 'errors', __( 'End date must be greater than the start date on row #', 'erp' ) . ( $key + 1 ) );
+
+        if ( empty( $data['start_date'] ) || empty( $data['end_date'] ) ) {
+            return new WP_Error( 'errors', __( 'Start and end date are required on row #', 'erp' ) . ( $key + 1 ) );
         }
 
-        if ( in_array( $data['fy_name'], $year_names ) ) {
-            return new WP_Error( 'errors', __( 'Duplicate financial year name ', 'erp' ) . $data['fy_name'] . __( ' on row #', 'erp' ) . ( $key + 1 ) );
-        } else {
-            array_push( $year_names, $data['fy_name'] );
+        if ( strtotime( $data['end_date'] ) <= strtotime( $data['start_date'] ) ) {
+            return new WP_Error( 'errors', __( 'End date must be greater than start date on row #', 'erp' ) . ( $key + 1 ) );
         }
+
+        if ( in_array( $data['fy_name'], $year_names, true ) ) {
+            return new WP_Error( 'errors', __( 'Duplicate financial year name ', 'erp' ) . $data['fy_name'] );
+        }
+
+        $year_names[] = $data['fy_name'];
     }
 
-    global $wpdb;
-
-    // Empty HR leave years data
+    // Reset table
     $wpdb->query( 'TRUNCATE TABLE ' . $wpdb->prefix . 'erp_hr_financial_years' );
 
-    // Insert leave years
     foreach ( $post_data as $data ) {
-        $data['fy_name']     = sanitize_text_field( wp_unslash( $data['fy_name'] ) );
-        $data['start_date']  = strtotime( sanitize_text_field( wp_unslash( $data['start_date'] ) ) );
-        $data['end_date']    = strtotime( sanitize_text_field( wp_unslash( $data['end_date'] ) ) );
-        $data['description'] = sanitize_text_field( wp_unslash( $data['description'] ) );
-        $data['created_by']  = get_current_user_id();
-        $data['created_at']  = gmdate( 'Y-m-d' );
+
+        $tz = wp_timezone();
+
+
+        // START DATE → 00:00:00
+        $start = ( new DateTimeImmutable( $data['start_date'], $tz ) )
+            ->setTime( 0, 0, 0 )
+            ->setTimezone( new DateTimeZone( 'UTC' ) )
+            ->getTimestamp();
+
+        // END DATE → 23:59:59
+        $end = ( new DateTimeImmutable( $data['end_date'], $tz ) )
+            ->setTime( 23, 59, 59 )
+            ->setTimezone( new DateTimeZone( 'UTC' ) )
+            ->getTimestamp();
 
         $wpdb->insert(
             $wpdb->prefix . 'erp_hr_financial_years',
-            $data,
-            [ '%s', '%s', '%s', '%s', '%d', '%s' ]
+            [
+                'fy_name'     => sanitize_text_field( $data['fy_name'] ),
+                'start_date'  => $start,
+                'end_date'    => $end,
+                'description' => sanitize_text_field( $data['description'] ?? '' ),
+                'created_by'  => get_current_user_id(),
+                'created_at'  => gmdate( 'Y-m-d H:i:s' ),
+            ],
+            [ '%s', '%d', '%d', '%s', '%d', '%s' ]
         );
     }
 

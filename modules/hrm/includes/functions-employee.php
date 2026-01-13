@@ -76,16 +76,17 @@ function erp_hr_get_employees( $args = [] ) {
 
     $cache_key_counts = 'erp-get-employees-count-' . md5( serialize( $args ) ) . " : $last_changed";
     $results_counts   = wp_cache_get( $cache_key_counts, 'erp' );
+    $usermeta_table = apply_filters( 'erp_hrm_usermeta_table_name', $wpdb->prefix . 'usermeta' );
 
     if ( false === $results ) {
 
         $employee_tbl = $wpdb->prefix . 'erp_hr_employees';
         $employees    = \WeDevs\ERP\HRM\Models\Employee::select( [ $employee_tbl . '.user_id', 'display_name' ] )
             ->leftJoin( $wpdb->users, $employee_tbl . '.user_id', '=', $wpdb->users . '.ID' )
-            ->leftJoin( "{$wpdb->prefix}usermeta as gender", function ( $join ) use ( $employee_tbl ) {
+            ->leftJoin( "{$usermeta_table} as gender", function ( $join ) use ( $employee_tbl ) {
                 $join->on( $employee_tbl . '.user_id', '=', 'gender.user_id' )->where( 'gender.meta_key', '=', 'gender' );
             } )
-            ->leftJoin( "{$wpdb->prefix}usermeta as marital_status", function ( $join ) use ( $employee_tbl ) {
+            ->leftJoin( "{$usermeta_table} as marital_status", function ( $join ) use ( $employee_tbl ) {
                 $join->on( $employee_tbl . '.user_id', '=', 'marital_status.user_id' )->where( 'marital_status.meta_key', '=', 'marital_status' );
             } );
 
@@ -373,8 +374,10 @@ function erp_employee_delete( $employee_ids, $force = false ) {
             \WeDevs\ERP\HRM\Models\Announcement::where( 'user_id', '=', $employee_wp_user_id )->delete();
 
             \WeDevs\ERP\HRM\Models\Employee::where( 'user_id', $employee_wp_user_id )->withTrashed()->forceDelete();
-            $wp_user->remove_role( erp_hr_get_manager_role() );
-            $wp_user->remove_role( erp_hr_get_employee_role() );
+            if ( $wp_user ) {
+                $wp_user->remove_role( erp_hr_get_manager_role() );
+                $wp_user->remove_role( erp_hr_get_employee_role() );
+            }
 
             //finally remove from WordPress user
             $remove_wp_user = get_option( 'erp_hrm_remove_wp_user', 'no' );
@@ -1163,4 +1166,254 @@ function erp_hr_get_education_result_type_options( $selected = null ) {
     }
 
     return $types;
+}
+
+
+/**
+ * Check if a user has an employee record
+ *
+ * @param int $user_id User ID
+ *
+ * @return bool True if the user has an employee record, false otherwise
+ */
+function wperp_hrm_user_has_employee($user_id) {
+    // Returns true if Employee record exists for this user, including trashed
+    return \WeDevs\ERP\HRM\Models\Employee::withTrashed()->where('user_id', $user_id)->exists();
+}
+
+/**
+ * Check if bulk delete action is being performed and if users have employee records
+ * If so, display an error message and stop further processing
+ *
+ * @return void
+ */
+function intercept_bulk_wpuser_delete() {
+    // Skip if this is a reset data action
+    if (isset($_REQUEST['action']) && $_REQUEST['action'] === 'erp_reset_data') {
+        return;
+    }
+
+    if (
+        is_admin() &&
+        isset($_REQUEST['action']) &&
+        $_REQUEST['action'] === 'delete' &&
+        !empty($_REQUEST['users'])
+    ) {
+
+        // Check if user confirmed to delete employees
+        if (isset($_REQUEST['confirm_delete_employees']) && $_REQUEST['confirm_delete_employees'] === '1') {
+            // Verify nonce for security
+            check_admin_referer('bulk-users');
+
+            $users = (array) $_REQUEST['users'];
+            $deleted_count = 0;
+            $current_user_id = get_current_user_id();
+
+            foreach ($users as $user_id) {
+                $user_id = (int) $user_id;
+
+                // Skip if trying to delete current user
+                if ($user_id === $current_user_id) {
+                    continue;
+                }
+
+                // Delete employee record if exists
+                if (wperp_hrm_user_has_employee($user_id)) {
+                    erp_employee_delete($user_id, true);
+                }
+
+                // Delete WordPress user
+                require_once(ABSPATH . 'wp-admin/includes/user.php');
+                if (wp_delete_user($user_id, $current_user_id)) {
+                    $deleted_count++;
+                }
+            }
+
+            // Redirect with success message
+            wp_redirect(add_query_arg(
+                'deleted',
+                $deleted_count,
+                admin_url('users.php')
+            ));
+            exit;
+        }
+
+        $users = (array) $_REQUEST['users'];
+        $users_with_employee = [];
+        foreach ($users as $user_id) {
+            if (wperp_hrm_user_has_employee($user_id)) {
+                $users_with_employee[] = $user_id;
+            }
+        }
+
+        if (!empty($users_with_employee)) {
+
+                // Prepare usernames, display names, and profile images for display
+                $items = [];
+                foreach ($users_with_employee as $uid) {
+                    $user = get_userdata($uid);
+                    if ($user) {
+                        $avatar = get_avatar($uid, 32);
+                        $login = esc_html($user->user_login);
+                        $display = esc_html($user->display_name);
+                        $items[] = '<li style="margin-bottom:4px;display:flex;align-items:center;">' . $avatar . '<span style="margin-left:8px;"><strong>' . $login . '</strong> <em>(' . $display . ')</em></span></li>';
+                    }
+                }
+
+                $user_list = '<ul style="margin-left:20px;">' . implode('', $items) . '</ul>';
+
+                wp_die(
+                    sprintf(
+                        /* translators: %s: List of usernames */
+                        __('The following users have associated Employee profiles in WP ERP HRM and cannot be deleted. Please delete the Employee profiles first:%s', 'erp'),
+                        $user_list
+                    ),
+                    __('Cannot Delete Users', 'erp'),
+                    ['back_link' => true]
+                );
+
+
+            // Prepare usernames, display names, and profile images for display
+            $items = [];
+            foreach ($users_with_employee as $uid) {
+                $user = get_userdata($uid);
+                if ($user) {
+                    $avatar = get_avatar($uid, 32);
+                    $login = esc_html($user->user_login);
+                    $display = esc_html($user->display_name);
+                    $items[] = '<li style="margin-bottom:4px;display:flex;align-items:center;">' . $avatar . '<span style="margin-left:8px;"><strong>' . $login . '</strong> <em>(' . $display . ')</em></span></li>';
+                }
+            }
+
+            // Build confirmation form
+            $user_list = '<ul style="margin-left:20px;">' . implode('', $items) . '</ul>';
+
+            $message = sprintf(
+                /* translators: %s: List of usernames */
+                __('The following users have associated Employee profiles in WP ERP HRM:%s', 'erp'),
+                $user_list
+            );
+
+            $message .= '<div style="margin-top:20px;padding:15px;background:#fff;border:1px solid #ddd;border-radius:4px;">';
+            $message .= '<p><strong>' . __('What would you like to do?', 'erp') . '</strong></p>';
+            $message .= '<form method="post" action="" style="margin-top:10px;">';
+
+            // Preserve all original request parameters
+            foreach ($_REQUEST as $key => $value) {
+                if ($key !== 'confirm_delete_employees' && !is_array($value)) {
+                    $message .= '<input type="hidden" name="' . esc_attr($key) . '" value="' . esc_attr($value) . '">';
+                }
+            }
+
+            // Handle users array
+            if (is_array($_REQUEST['users'])) {
+                foreach ($_REQUEST['users'] as $user) {
+                    $message .= '<input type="hidden" name="users[]" value="' . esc_attr($user) . '">';
+                }
+            }
+
+            $message .= '<input type="hidden" name="confirm_delete_employees" value="1">';
+            $message .= '<p style="margin-bottom:15px;">';
+            $message .= '<button type="submit" class="button button-primary button-large" style="margin-right:10px;">';
+            $message .= __('Delete Employee Profiles and WordPress Users', 'erp');
+            $message .= '</button>';
+            $message .= '<a href="' . esc_url(admin_url('users.php')) . '" class="button button-large">';
+            $message .= __('Cancel', 'erp');
+            $message .= '</a>';
+            $message .= '</p>';
+            $message .= '<p style="color:#d63638;margin-top:10px;"><em>' . __('Warning: This action cannot be undone. All employee data including leave records, notes, and history will be permanently deleted.', 'erp') . '</em></p>';
+            $message .= '</form>';
+            $message .= '</div>';
+
+            wp_die(
+                $message,
+                __('Employee Profiles Found', 'erp'),
+                ['back_link' => false]
+            );
+        }
+    }
+}
+
+/**
+ * Intercept single user delete action and prevent deletion if the user has an employee record
+ *
+ * @param int $user_id User ID
+ *
+ * @return void
+ */
+function intercept_single_user_delete($user_id) {
+    // Skip if this is a reset data action
+    if (isset($_REQUEST['action']) && $_REQUEST['action'] === 'erp_reset_data') {
+        return;
+    }
+    if (wperp_hrm_user_has_employee($user_id)) {
+        // Check if user confirmed to delete employee
+        if (isset($_REQUEST['confirm_delete_employee']) && $_REQUEST['confirm_delete_employee'] === '1') {
+            // Verify nonce for security
+            check_admin_referer('delete-user_' . $user_id);
+
+            $current_user_id = get_current_user_id();
+
+            // Don't allow deleting current user
+            if ($user_id === $current_user_id) {
+                wp_die(__('You cannot delete yourself.', 'erp'));
+            }
+
+            // Delete employee record
+            erp_employee_delete($user_id, true);
+
+            // Delete WordPress user
+            require_once(ABSPATH . 'wp-admin/includes/user.php');
+            wp_delete_user($user_id, $current_user_id);
+
+            // Redirect with success message
+            wp_redirect(add_query_arg(
+                'deleted',
+                '1',
+                admin_url('users.php')
+            ));
+            exit;
+        }
+
+
+        $user = get_userdata($user_id);
+        $avatar = get_avatar($user_id, 64);
+
+        $message = '<div style="text-align:center;margin-bottom:20px;">' . $avatar . '</div>';
+        $message .= sprintf(
+            /* translators: 1: username, 2: display name */
+            __('User <strong>%1$s</strong> (%2$s) has an associated Employee profile in WP ERP HRM.', 'erp'),
+            esc_html($user->user_login),
+            esc_html($user->display_name)
+        );
+
+        $message .= '<div style="margin-top:20px;padding:15px;background:#fff;border:1px solid #ddd;border-radius:4px;">';
+        $message .= '<p><strong>' . __('What would you like to do?', 'erp') . '</strong></p>';
+        $message .= '<form method="post" action="" style="margin-top:10px;">';
+
+        foreach ($_REQUEST as $key => $value) {
+            if ($key !== 'confirm_delete_employee' && !is_array($value)) {
+                $message .= '<input type="hidden" name="' . esc_attr($key) . '" value="' . esc_attr($value) . '">';
+            }
+        }
+
+        $message .= '<input type="hidden" name="confirm_delete_employee" value="1">';
+        $message .= '<p style="margin-bottom:15px;">';
+        $message .= '<button type="submit" class="button button-primary button-large" style="margin-right:10px;">';
+        $message .= __('Delete Employee Profile and WordPress User', 'erp');
+        $message .= '</button>';
+        $message .= '<a href="' . esc_url(admin_url('users.php')) . '" class="button button-large">';
+        $message .= __('Cancel', 'erp');
+        $message .= '</a>';
+        $message .= '</p>';
+        $message .= '<p style="color:#d63638;margin-top:10px;"><em>' . __('Warning: This action cannot be undone. All employee data including leave records, notes, and history will be permanently deleted.', 'erp') . '</em></p>';
+        $message .= '</form>';
+        $message .= '</div>';
+
+        wp_die(
+            $message,
+            __('Employee Profile Found', 'erp'),
+            ['back_link' => false]
+        );
+    }
 }

@@ -36,6 +36,7 @@ class Ajax {
         $this->action( 'wp_ajax_erp_import_csv', 'import_csv' );
         $this->action( 'wp_ajax_erp_acct_get_sample_csv_url', 'generate_csv_url' );
         $this->action( 'wp_ajax_erp_reset_data', 'erp_reset_data' );
+        $this->action( 'wp_ajax_erp_dismiss_offer', 'dismiss_offer' );
     }
 
     /**
@@ -325,7 +326,7 @@ class Ajax {
                 }
 
                 $item_insert_id = erp_hr_employee_create( $line_data );
-                
+
                 if ( ! is_wp_error( $item_insert_id ) && ! empty( $line_data['work']['reporting_to'] ) ) {
                     /**
                      * Add reporting to array for processing job history after import employee
@@ -404,22 +405,22 @@ class Ajax {
 
     /**
      * Map reporting to employee by email
-     * 
+     *
      * @param array $reporting_to
      *
      * @return void
      */
     function map_reporting_to_employee( $reporting_to ) {
         global $wpdb;
-    
+
         foreach ( $reporting_to as $value ) {
             if ( ! empty( $value['reporting_to'] ) && ! empty( $value['user_id'] ) ) {
                 $reporting_employee = get_user_by( 'email', $value['reporting_to'] );
 
                 if ( $reporting_employee ) {
                     $reporting_employee_id = $reporting_employee->ID;
-    
-                    
+
+
                      // Update reporting to employee id in erp_hr_employees table
                     $wpdb->query(
                         $wpdb->prepare(
@@ -607,12 +608,39 @@ class Ajax {
 
                 <tbody>
                     <?php $i=1; ?>
-                    <?php foreach ( $old_value as $key => $value ) { ?>
+                    <?php foreach ( $old_value as $key => $value ) {
+                         if(is_array($value) && is_array($new_value[$key]) ) {
+                            foreach ($value as $sub_key => $sub_value) {
+                                if ( isset( $new_value[$key][$sub_key] ) ) {
+                                    ?>
+                                    <tr class="<?php echo $i % 2 == 0 ? 'alternate' : 'odd'; ?>">
+                                        <td class="col-date"><?php echo esc_html( ucfirst( str_replace( '_', ' ', $key ) ) . ' - ' . ucfirst( str_replace( '_', ' ', $sub_key ) ) ); ?></td>
+                                        <td><?php echo ( $sub_value ) ? esc_html( wp_unslash( $sub_value ) ) : '--'; ?></td>
+                                        <td><?php echo ( isset( $new_value[$key][$sub_key] ) && $new_value[$key][$sub_key] ) ? esc_html( wp_unslash( $new_value[$key][$sub_key] ) ) : '--'; ?></td>
+                                    </tr>
+                                    <?php
+                                } else {
+                                    ?>
+                                    <tr class="<?php echo $i % 2 == 0 ? 'alternate' : 'odd'; ?>">
+                                        <td class="col-date"><?php echo esc_html( ucfirst( str_replace( '_', ' ', $key ) ) . ' - ' . ucfirst( str_replace( '_', ' ', $sub_key ) ) ); ?></td>
+                                        <td><?php echo ( $sub_value ) ? esc_html( wp_unslash( $sub_value ) ) : '--'; ?></td>
+                                        <td><?php echo '--'; ?></td>
+                                    </tr>
+                                    <?php
+                                }
+                            }
+
+                         }else{
+
+
+                        ?>
+
                         <tr class="<?php echo $i % 2 == 0 ? 'alternate' : 'odd'; ?>">
                             <td class="col-date"><?php echo esc_html( ucfirst( str_replace( '_', ' ', $key ) ) ); ?></td>
                             <td><?php echo ( $value ) ? esc_html( wp_unslash( $value ) ) : '--'; ?></td>
                             <td><?php echo ( $new_value[$key] ) ? esc_html( wp_unslash( $new_value[$key] ) ) : '--'; ?></td>
                         </tr>
+                        <?php } ?>
                     <?php $i++; } ?>
                 </tbody>
             </table>
@@ -634,6 +662,16 @@ class Ajax {
      * @return void
      */
     public function check_people() {
+        // Verify nonce for CSRF protection
+        if ( ! isset( $_REQUEST['_wpnonce'] ) || ! wp_verify_nonce( sanitize_key( $_REQUEST['_wpnonce'] ), 'wp-erp-crm-nonce' ) ) {
+            $this->send_error( __( 'Error: Nonce verification failed', 'erp' ) );
+        }
+
+        // Check if user has permission to access contact data
+        if ( ! current_user_can( 'erp_crm_list_contact' ) ) {
+            $this->send_error( __( 'You do not have sufficient permissions to do this action', 'erp' ) );
+        }
+
         $email = isset( $_REQUEST['email'] ) ? sanitize_email( wp_unslash( $_REQUEST['email'] ) ) : false;
 
         if ( ! $email ) {
@@ -648,10 +686,12 @@ class Ajax {
             $peep = \WeDevs\ERP\Framework\Models\People::with( 'types' )->whereUserId( $user->ID )->first();
 
             if ( null === $peep ) {
-                $user->data->types = 'wp_user';
-                $people            = $user;
+                // Create a simple object for WP users not in ERP
+                $people = new \stdClass();
+                $people->id = null; // No ERP ID for WP-only users
+                $people->types = array( 'wp_user' );
             } else {
-                $people        = (object) $peep->toArray();
+                $people = (object) $peep->toArray();
                 $people->types = wp_list_pluck( $peep->types->toArray(), 'name' );
             }
         }
@@ -661,8 +701,15 @@ class Ajax {
             $this->send_error();
         }
 
+        // Return only essential, non-sensitive information
+        $safe_data = array(
+            'exists' => true,
+            'id' => isset( $people->id ) ? $people->id : null,
+            'types' => isset( $people->types ) ? $people->types : array()
+        );
+
         // seems like we found one
-        $this->send_success( $people );
+        $this->send_success( $safe_data );
     }
 
     /**
@@ -1036,5 +1083,35 @@ class Ajax {
                 'redirected_url' => admin_url( "admin.php?page=erp-setup" ),
             ]
         );
+    }
+
+    /**
+     * Dismiss promotion notice
+     *
+     * @since 1.16.2
+     *
+     * @return void
+     */
+    public function dismiss_offer() {
+
+        if ( empty( $_POST['nonce'] ) && ! isset( $_POST['wperp_offer_key'] ) ) {
+
+            return;
+        }
+
+        if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['nonce'] ) ), 'wperp-dismiss-offer-notice' ) ) {
+            wp_send_json_error( __( 'Invalid nonce', 'erp' ) );
+            return;
+        }
+
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( __( 'You have no permission to do that', 'erp' ) );
+            return;
+        }
+
+        $offer_key    = 'wperp_offer_notice';
+        $disabled_key = sanitize_text_field( wp_unslash( $_POST['wperp_offer_key'] ) );
+
+        update_option( $offer_key, $disabled_key );
     }
 }
