@@ -59,7 +59,7 @@ use WeDevs\ERP\Framework\Modules;
 use WeDevs\ERP\Admin\UserProfile;
 use WeDevs\ERP\WeDevsERPInstaller;
 
-require_once WPERP_INCLUDES . '/functions-holiday.php';
+
 require_once __DIR__ . '/vendor/autoload.php';
 define( 'WPERP_VERSION', '1.16.9' );
 define( 'WPERP_FILE', __FILE__ );
@@ -70,6 +70,7 @@ define( 'WPERP_URL', plugins_url( '', WPERP_FILE ) );
 define( 'WPERP_ASSETS', WPERP_URL . '/assets' );
 define( 'WPERP_VIEWS', WPERP_INCLUDES . '/Admin/views' );
 
+require_once WPERP_INCLUDES . '/functions-holiday.php';
 /**
  * WeDevs_ERP class
  *
