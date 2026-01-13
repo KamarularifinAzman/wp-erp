@@ -59,8 +59,9 @@ use WeDevs\ERP\Framework\Modules;
 use WeDevs\ERP\Admin\UserProfile;
 use WeDevs\ERP\WeDevsERPInstaller;
 
-
 require_once __DIR__ . '/vendor/autoload.php';
+
+// Define constants FIRST
 define( 'WPERP_VERSION', '1.16.9' );
 define( 'WPERP_FILE', __FILE__ );
 define( 'WPERP_PATH', dirname( WPERP_FILE ) );
@@ -70,7 +71,11 @@ define( 'WPERP_URL', plugins_url( '', WPERP_FILE ) );
 define( 'WPERP_ASSETS', WPERP_URL . '/assets' );
 define( 'WPERP_VIEWS', WPERP_INCLUDES . '/Admin/views' );
 
-require_once WPERP_INCLUDES . '/functions-holiday.php';
+// NOW include holiday functions (after constants are defined)
+if ( file_exists( WPERP_INCLUDES . '/functions-holiday.php' ) ) {
+    require_once WPERP_INCLUDES . '/functions-holiday.php';
+}
+
 /**
  * WeDevs_ERP class
  *
@@ -142,9 +147,6 @@ final class WeDevs_ERP {
         if ( ! $this->is_supported_php() ) {
             return;
         }
-
-        // Define constants
-        // $this->define_constants();
 
         // Include required files
         $this->includes();
@@ -259,8 +261,6 @@ final class WeDevs_ERP {
         require_once WPERP_INCLUDES . '/functions-html.php';
         require_once WPERP_INCLUDES . '/functions-company.php';
         require_once WPERP_INCLUDES . '/functions-people.php';
-//        require_once WPERP_INCLUDES . '/api/class-api-registrar.php';
-//        require_once WPERP_INCLUDES . '/class-i18n.php';
         require_once WPERP_INCLUDES . '/functions-cache-helper.php';
 
         if ( is_admin() ) {
@@ -290,7 +290,8 @@ final class WeDevs_ERP {
         new AdminMenu();
 
         $this->container['modules'] = new Modules();
-		// Erp pro is loaded in erp-mail action hook. Not to load that if upgrade is needed, we check in this place (along with L-143) too.
+        
+        // Erp pro is loaded in erp-mail action hook. Not to load that if upgrade is needed, we check in this place (along with L-143) too.
         if ( $this->is_need_to_upgrade() ) {
             return;
         }
@@ -377,6 +378,10 @@ final class WeDevs_ERP {
         global $wpdb;
 
         $wpdb->erp_peoplemeta = $wpdb->prefix . 'erp_peoplemeta';
+        
+        // Add custom table names for holiday locations
+        $wpdb->erp_hr_holiday_locations = $wpdb->prefix . 'erp_hr_holiday_locations';
+        $wpdb->erp_hr_holiday_companies = $wpdb->prefix . 'erp_hr_holiday_companies';
     }
 
     /**
@@ -439,7 +444,6 @@ function wperp() {
     return WeDevs_ERP::init();
 }
 
-
 add_action('init', function(){
     wperp();
 }, 1);
@@ -447,8 +451,8 @@ add_action('init', function(){
 register_activation_hook( __FILE__, function() {
     $installer = new WeDevsERPInstaller();
     $installer->activate();
-	
-	 // Run HR holiday location updater if HR module is present
+    
+    // Run HR holiday location updates after activation
     if ( function_exists( 'erp_hr_run_holiday_location_updates' ) ) {
         erp_hr_run_holiday_location_updates();
     }
