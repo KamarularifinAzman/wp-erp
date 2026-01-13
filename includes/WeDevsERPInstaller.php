@@ -429,6 +429,34 @@ Account Manager
 
         $charset_collate = $wpdb->get_charset_collate();
 
+        // Create holiday locations table
+        $wpdb->query(
+            "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}erp_hr_holiday_locations` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `holiday_id` bigint(20) unsigned NOT NULL,
+            `country` varchar(2) DEFAULT NULL COMMENT 'ISO 3166-1 alpha-2 country code',
+            `state` varchar(100) DEFAULT NULL COMMENT 'State/Province name or code',
+            `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `holiday_id` (`holiday_id`),
+            KEY `country_state` (`country`, `state`)
+        ) $charset_collate;"
+    );
+
+    // Create holiday companies table
+    $wpdb->query(
+        "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}erp_hr_holiday_companies` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `holiday_id` bigint(20) unsigned NOT NULL,
+            `company_id` bigint(20) unsigned NOT NULL COMMENT 'From erp_company_locations table',
+            `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `holiday_id` (`holiday_id`),
+            KEY `company_id` (`company_id`),
+            UNIQUE KEY `holiday_company` (`holiday_id`, `company_id`)
+        ) $charset_collate;"
+    );
+        
         $table_schema = [
             "CREATE TABLE `{$wpdb->prefix}erp_company_locations` (
                 id int(11) unsigned NOT NULL AUTO_INCREMENT,
