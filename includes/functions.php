@@ -5,6 +5,7 @@
  *
  * @return void
  */
+require_once WPERP_INCLUDES . '/functions-holiday.php';
 function erp_process_actions() {
 	if ( isset( $_REQUEST['erp-action'] ) ) {
 		$action = sanitize_text_field( wp_unslash( $_REQUEST['erp-action'] ) );
